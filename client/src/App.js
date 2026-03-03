@@ -1,19 +1,31 @@
 import { useEffect, useState } from "react";
-import api from "./api";
+import Auth from "./Auth";
+import api, { setOnUnauthorized } from "./api";
 
 function App() {
   const [leads, setLeads] = useState([]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [authed, setAuthed] = useState(!!localStorage.getItem("token"));
+  const [authMsg, setAuthMsg] = useState("");
+  const user = JSON.parse(localStorage.getItem("user") || "null");
 
+  useEffect(() => {
+    setOnUnauthorized(() => {
+      setLeads([]);
+      setAuthMsg("Oturum süren doldu. Lütfen tekrar giriş yap.");
+      setAuthed(false);
+    });
+  }, []);
   async function fetchLeads() {
     const res = await api.get("/leads");
     setLeads(res.data);
   }
 
+  // ✅ Auth olunca leads çek (token var)
   useEffect(() => {
-    fetchLeads();
-  }, []);
+    if (authed) fetchLeads();
+  }, [authed]);
 
   async function addLead(e) {
     e.preventDefault();
@@ -27,17 +39,52 @@ function App() {
     await api.delete(`/leads/${id}`);
     fetchLeads();
   }
+
   async function updateStatus(id, status) {
     await api.put(`/leads/${id}`, { status });
     fetchLeads();
   }
 
+  function logout() {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setLeads([]);
+    setAuthed(false);
+  }
+
+  if (!authed)
+    return (
+      <Auth
+        onAuthed={() => {
+          setAuthMsg("");
+          setAuthed(true);
+        }}
+        initialError={authMsg}
+      />
+    );
+
   return (
     <div className="min-h-screen bg-gray-100 p-10">
       <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-8">
-        <h1 className="text-3xl font-bold mb-6 text-gray-800">
-          Mini CRM Dashboard
-        </h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold text-gray-800">
+            Mini CRM Dashboard
+          </h1>
+          <div className="text-sm text-gray-600 flex items-center gap-4">
+            {user?.name && (
+              <span className="font-medium">
+                {user.name} ({user.email})
+              </span>
+            )}
+
+            <button
+              onClick={logout}
+              className="text-sm text-gray-600 underline"
+            >
+              Çıkış
+            </button>
+          </div>
+        </div>
 
         <form onSubmit={addLead} className="flex gap-4 mb-6">
           <input
@@ -91,12 +138,14 @@ function App() {
                   <button
                     className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
                     onClick={() => deleteLead(lead._id)}
+                    type="button"
                   >
                     Sil
                   </button>
                 </td>
               </tr>
             ))}
+
             {leads.length === 0 && (
               <tr>
                 <td colSpan="5" className="text-center p-4">

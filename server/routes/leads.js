@@ -1,56 +1,66 @@
 const express = require("express");
-const router = express.Router();
 const Lead = require("../models/LeadTemp");
+const auth = require("../middleware/auth");
 
-// GET /leads
+const router = express.Router();
+
+// Tüm leads endpoint’lerini koru
+router.use(auth);
+
+// GET /leads  -> sadece kendi lead’leri
 router.get("/", async (req, res) => {
-  const leads = await Lead.find().sort({ createdAt: -1 });
-  res.json(leads);
+  try {
+    const leads = await Lead.find({ owner: req.user.userId }).sort({ createdAt: -1 });
+    res.json(leads);
+  } catch (err) {
+    res.status(500).json({ message: "Leads getirilemedi" });
+  }
 });
 
-// POST /leads
+// POST /leads -> lead oluştur (owner otomatik)
 router.post("/", async (req, res) => {
-  const name = (req.body?.name ?? "").trim();
-  const email = (req.body?.email ?? "").trim();
+  try {
+    const name = (req.body?.name ?? "").trim();
+    const email = (req.body?.email ?? "").trim();
 
-  if (!name || !email) {
-    return res.status(400).json({ message: "name ve email zorunlu" });
+    if (!name || !email) {
+      return res.status(400).json({ message: "name ve email gerekli" });
+    }
+
+    const newLead = await Lead.create({ name, email, owner: req.user.userId });
+    res.status(201).json(newLead);
+  } catch (err) {
+    res.status(500).json({ message: "Lead oluşturulamadı" });
   }
-
-  const newLead = await Lead.create({ name, email });
-  res.status(201).json(newLead);
 });
 
-// PUT /leads/:id
+// PUT /leads/:id -> sadece kendi lead’ini güncelle
 router.put("/:id", async (req, res) => {
-  const { status, name, email } = req.body;
+  try {
+    const status = req.body?.status;
 
-  const updated = await Lead.findByIdAndUpdate(
-    req.params.id,
-    {
-      ...(status !== undefined ? { status } : {}),
-      ...(name !== undefined ? { name } : {}),
-      ...(email !== undefined ? { email } : {}),
-    },
-    { new: true, runValidators: true }
-  );
+    const updated = await Lead.findOneAndUpdate(
+      { _id: req.params.id, owner: req.user.userId },
+      { ...(status !== undefined ? { status } : {}) },
+      { new: true, runValidators: true }
+    );
 
-  if (!updated) {
-    return res.status(404).json({ message: "Lead bulunamadı" });
+    if (!updated) return res.status(404).json({ message: "Lead bulunamadı" });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: "Lead güncellenemedi" });
   }
-
-  res.json({ message: "Lead güncellendi", updated });
 });
 
-// DELETE /leads/:id
+// DELETE /
 router.delete("/:id", async (req, res) => {
-  const deleted = await Lead.findByIdAndDelete(req.params.id);
-
-  if (!deleted) {
-    return res.status(404).json({ message: "Lead bulunamadı" });
+  try {
+    const deleted = await Lead.findOneAndDelete({ _id: req.params.id, owner: req.user.userId });
+    if (!deleted) return res.status(404).json({ message: "Lead bulunamadı" });
+    res.json({ message: "Silindi" });
+  } catch (err) {
+    res.status(500).json({ message: "Lead silinemedi" });
   }
-
-  res.json({ message: "Lead silindi", deleted });
 });
 
 module.exports = router;
