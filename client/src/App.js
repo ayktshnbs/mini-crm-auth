@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Auth from "./Auth";
 import api, { setOnUnauthorized } from "./api";
 
@@ -6,8 +6,11 @@ function App() {
   const [leads, setLeads] = useState([]);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [q, setQ] = useState("");
   const [authed, setAuthed] = useState(!!localStorage.getItem("token"));
   const [authMsg, setAuthMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+
   const user = JSON.parse(localStorage.getItem("user") || "null");
 
   useEffect(() => {
@@ -17,18 +20,25 @@ function App() {
       setAuthed(false);
     });
   }, []);
+
   async function fetchLeads() {
-    const res = await api.get("/leads");
-    setLeads(res.data);
+    try {
+      setLoading(true);
+      const res = await api.get("/leads");
+      setLeads(res.data);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  // ✅ Auth olunca leads çek (token var)
   useEffect(() => {
     if (authed) fetchLeads();
   }, [authed]);
 
   async function addLead(e) {
     e.preventDefault();
+    if (!name.trim() || !email.trim()) return;
+
     await api.post("/leads", { name, email });
     setName("");
     setEmail("");
@@ -36,6 +46,11 @@ function App() {
   }
 
   async function deleteLead(id) {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to delete this lead?"
+    );
+    if (!confirmDelete) return;
+
     await api.delete(`/leads/${id}`);
     fetchLeads();
   }
@@ -52,7 +67,28 @@ function App() {
     setAuthed(false);
   }
 
-  if (!authed)
+  function getStatusColor(status) {
+    switch (status) {
+      case "Won":
+        return "text-green-600";
+      case "Lost":
+        return "text-red-600";
+      case "Contacted":
+        return "text-blue-600";
+      default:
+        return "text-gray-600";
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return leads;
+    return leads.filter((l) =>
+      `${l.name} ${l.email}`.toLowerCase().includes(s)
+    );
+  }, [leads, q]);
+
+  if (!authed) {
     return (
       <Auth
         onAuthed={() => {
@@ -62,14 +98,21 @@ function App() {
         initialError={authMsg}
       />
     );
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-10">
       <div className="max-w-4xl mx-auto bg-white shadow-xl rounded-xl p-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">
-            Mini CRM Dashboard
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold text-gray-800">
+              Mini CRM Dashboard
+            </h1>
+            <span className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded-full">
+              {leads.length} leads
+            </span>
+          </div>
+
           <div className="text-sm text-gray-600 flex items-center gap-4">
             {user?.name && (
               <span className="font-medium">
@@ -77,16 +120,13 @@ function App() {
               </span>
             )}
 
-            <button
-              onClick={logout}
-              className="text-sm text-gray-600 underline"
-            >
+            <button onClick={logout} className="underline">
               Çıkış
             </button>
           </div>
         </div>
 
-        <form onSubmit={addLead} className="flex gap-4 mb-6">
+        <form onSubmit={addLead} className="flex gap-4 mb-4">
           <input
             className="border p-2 rounded w-1/3"
             placeholder="İsim"
@@ -104,6 +144,17 @@ function App() {
           </button>
         </form>
 
+        <input
+          className="border p-2 rounded w-full mb-4"
+          placeholder="Search by name or email..."
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+
+        {loading && (
+          <div className="mb-4 text-gray-500 text-sm">Loading leads...</div>
+        )}
+
         <table className="w-full border-collapse">
           <thead>
             <tr className="text-left border-b">
@@ -115,7 +166,7 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {leads.map((lead) => (
+            {filtered.map((lead) => (
               <tr key={lead._id} className="border-b hover:bg-gray-50">
                 <td className="p-2">{lead._id.slice(-6)}</td>
                 <td className="p-2">{lead.name}</td>
@@ -123,7 +174,9 @@ function App() {
 
                 <td className="p-2">
                   <select
-                    className="border rounded p-1"
+                    className={`border rounded p-1 ${getStatusColor(
+                      lead.status
+                    )}`}
                     value={lead.status || "New"}
                     onChange={(e) => updateStatus(lead._id, e.target.value)}
                   >
@@ -146,10 +199,12 @@ function App() {
               </tr>
             ))}
 
-            {leads.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan="5" className="text-center p-4">
-                  Henüz lead yok.
+                <td colSpan="5" className="text-center p-6 text-gray-500">
+                  {q.trim()
+                    ? "No matching leads found."
+                    : "No leads yet. Create your first lead to get started "}
                 </td>
               </tr>
             )}
